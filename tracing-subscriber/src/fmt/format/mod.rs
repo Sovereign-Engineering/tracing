@@ -409,6 +409,27 @@ pub struct Format<F = Full, T = SystemTime> {
     pub(crate) display_thread_name: bool,
     pub(crate) display_filename: bool,
     pub(crate) display_line_number: bool,
+    pub(crate) target_rewriter: Option<Box<dyn StringRewriter>>,
+}
+
+/// Rewrites strings
+pub trait StringRewriter: MyBoxClone + Debug + Send + Sync {
+    /// Rewrites strings
+    fn rewrite<'a>(&'a self, orig: &'a str) -> &str;
+
+}
+
+/// Boxed clone
+pub trait MyBoxClone {
+    /// Boxed clone
+    fn clone_box(&self) -> Box<dyn StringRewriter>;
+}
+
+// We can now implement Clone manually by forwarding to clone_box.
+impl Clone for Box<dyn StringRewriter> {
+    fn clone(&self) -> Box<dyn StringRewriter> {
+        self.clone_box()
+    }
 }
 
 // === impl Writer ===
@@ -599,6 +620,7 @@ impl Default for Format<Full, SystemTime> {
             display_thread_name: false,
             display_filename: false,
             display_line_number: false,
+            target_rewriter: None,
         }
     }
 }
@@ -619,6 +641,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            target_rewriter: None,
         }
     }
 
@@ -658,6 +681,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: true,
             display_line_number: true,
+            target_rewriter: None,
         }
     }
 
@@ -689,6 +713,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            target_rewriter: None,
         }
     }
 
@@ -718,6 +743,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            target_rewriter: None,
         }
     }
 
@@ -734,6 +760,7 @@ impl<F, T> Format<F, T> {
             display_thread_name: self.display_thread_name,
             display_filename: self.display_filename,
             display_line_number: self.display_line_number,
+            target_rewriter: None,
         }
     }
 
@@ -813,6 +840,14 @@ impl<F, T> Format<F, T> {
     pub fn with_source_location(self, display_location: bool) -> Self {
         self.with_line_number(display_location)
             .with_file(display_location)
+    }
+
+    /// Sets target rewriter
+    pub fn with_target_rewriter(self, rewriter: Box<dyn StringRewriter>) -> Self {
+        Format {
+            target_rewriter: Some(rewriter),
+            ..self
+        }
     }
 
     #[inline]
@@ -982,10 +1017,14 @@ where
         };
 
         if self.display_target {
+            let mut target: &str = meta.target();
+            if let Some(rewriter) = &self.target_rewriter {
+                target = rewriter.rewrite(target);
+            };
             write!(
                 writer,
                 "{}{} ",
-                dimmed.paint(meta.target()),
+                dimmed.paint(target),
                 dimmed.paint(":")
             )?;
         }
@@ -1100,10 +1139,14 @@ where
 
         let mut needs_space = false;
         if self.display_target {
+            let mut target: &str = meta.target();
+            if let Some(rewriter) = &self.target_rewriter {
+                target = rewriter.rewrite(target);
+            };
             write!(
                 writer,
                 "{}{}",
-                dimmed.paint(meta.target()),
+                dimmed.paint(target),
                 dimmed.paint(":")
             )?;
             needs_space = true;
